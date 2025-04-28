@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comparador de Planilhas</title>
+    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.12.9/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+    <div id="root"></div>
+    <script type="text/babel">
+        function App() {
+            const [file1, setFile1] = React.useState(null);
+            const [file2, setFile2] = React.useState(null);
+            const [colunas, setColunas] = React.useState([]);
+            const [selectedColunas, setSelectedColunas] = React.useState([]);
+            const [result, setResult] = React.useState(null);
+            const [error, setError] = React.useState(null);
+
+            const handleFileChange = (e, setFile) => {
+                setFile(e.target.files[0]);
+                if (file1 && e.target.files[0]) {
+                    loadColumns();
+                }
+            };
+
+            const loadColumns = async () => {
+                const formData = new FormData();
+                formData.append('file1', file1);
+                formData.append('file2', file2);
+
+                try {
+                    const response = await fetch('http://localhost:5000/get_columns', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        setColunas(data.colunas);
+                        setSelectedColunas([]);
+                    } else {
+                        setError(data.error);
+                    }
+                } catch (err) {
+                    setError('Erro ao carregar colunas.');
+                }
+            };
+
+            const handleColunaChange = (coluna) => {
+                if (selectedColunas.includes(coluna)) {
+                    setSelectedColunas(selectedColunas.filter(c => c !== coluna));
+                } else if (selectedColunas.length < 10) {
+                    setSelectedColunas([...selectedColunas, coluna]);
+                }
+            };
+
+            const handleCompare = async () => {
+                if (!file1 || !file2 || selectedColunas.length === 0) {
+                    setError('Por favor, selecione ambos os arquivos e pelo menos uma coluna.');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('file1', file1);
+                formData.append('file2', file2);
+                selectedColunas.forEach(col => formData.append('colunas', col));
+
+                try {
+                    const response = await fetch('http://localhost:5000/upload', {
+                        method親: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    setResult(data);
+                    setError(null);
+                } catch (err) {
+                    setError('Erro ao comparar planilhas.');
+                }
+            };
+
+            return (
+                <div class="max-w-3xl mx-auto p-6 bg-white rounded-lg shadow-lg">
+                    <h1 class="text-2xl font-bold mb-4 text-center">Comparador de Planilhas Excel</h1>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Planilha 1</label>
+                        <input type="file" accept=".xlsx" onChange={(e) => handleFileChange(e, setFile1)}
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Planilha 2</label>
+                        <input type="file" accept=".xlsx" onChange={(e) => handleFileChange(e, setFile2)}
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+                    </div>
+                    {colunas.length > 0 && (
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700">Selecione até 10 colunas</label>
+                            <div class="mt-2 grid grid-cols-2 gap-2">
+                                {colunas.map(coluna => (
+                                    <label key={coluna} class="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedColunas.includes(coluna)}
+                                            onChange={() => handleColunaChange(coluna)}
+                                            disabled={!selectedColunas.includes(coluna) && selectedColunas.length >= 10}
+                                            class="mr-2"
+                                        />
+                                        {coluna}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    <button onClick={handleCompare}
+                        class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700">
+                        Comparar
+                    </button>
+                    {error && <p class="mt-4 text-red-600">{error}</p>}
+                    {result && (
+                        <div class="mt-4 p-4 bg-gray-50 rounded-md">
+                            {result.error ? (
+                                <p class="text-red-600">{result.error}</p>
+                            ) : result.message ? (
+                                <p class="text-green-600">{result.message}</p>
+                            ) : (
+                                <div>
+                                    <h2 class="text-lg font-semibold">Diferenças encontradas:</h2>
+                                    {result.diferencas.map(diff => (
+                                        <div key={diff.coluna} class="mt-2">
+                                            <h3 class="font-medium">Coluna: {diff.coluna}</h3>
+                                            <ul class="list-disc pl-5">
+                                                {diff.diferencas.map(d => (
+                                                    <li key={d.linha}>
+                                                        Linha {d.linha}: Planilha 1 = {d.valor_planilha1}, Planilha 2 = {d.valor_planilha2}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
